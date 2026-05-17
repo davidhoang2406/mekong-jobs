@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast unit tests (no external services required)",
+    "dagster: Dagster asset and resource tests",
+]
+testpaths = ["tests"]
