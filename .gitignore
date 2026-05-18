@@ -10,3 +10,4 @@ build/
 /tmp/spark-events/
 .env
 .env.*
+.idea/
