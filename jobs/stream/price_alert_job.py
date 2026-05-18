@@ -105,7 +105,8 @@ def run() -> None:
         .filter(lambda m: m.get("event_type") == "price.snapshot")
         .key_by(lambda m: m["symbol"])
         .process(PriceAlertFunction())
-        .add_sink(telegram_alert_sink())
+        .map(telegram_alert_sink())
+        .print()
     )
 
     log.info("Starting PriceAlertJob | topics=%s | rules=%d", TOPICS, len(rules))

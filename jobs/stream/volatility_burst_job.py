@@ -142,7 +142,8 @@ def run() -> None:
         .key_by(lambda v: v["symbol"])
         .process(CooldownFunction())
         .map(_fmt_alert)
-        .add_sink(telegram_alert_sink())
+        .map(telegram_alert_sink())
+        .print()
     )
 
     log.info(
