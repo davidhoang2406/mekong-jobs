@@ -46,8 +46,8 @@ def run() -> None:
     class PriceAlertFunction(KeyedProcessFunction):
         """Per-symbol alert evaluation with per-rule cooldown via MapState."""
 
-        def open(self, ctx):
-            self._last_fired = self.runtime_context.get_map_state(
+        def open(self, runtime_context):
+            self._last_fired = runtime_context.get_map_state(
                 MapStateDescriptor("last_fired", Types.STRING(), Types.LONG())
             )
 

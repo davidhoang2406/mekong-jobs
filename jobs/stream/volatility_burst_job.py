@@ -89,8 +89,8 @@ def run() -> None:
     class CooldownFunction(KeyedProcessFunction):
         """Suppresses repeated alerts for the same symbol within the cooldown window."""
 
-        def open(self, ctx):
-            self._last_fired = self.runtime_context.get_map_state(
+        def open(self, runtime_context):
+            self._last_fired = runtime_context.get_map_state(
                 MapStateDescriptor("volatility_cooldown", Types.STRING(), Types.LONG())
             )
 
