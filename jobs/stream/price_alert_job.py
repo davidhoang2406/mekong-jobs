@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 from market_data_models.topics import CRYPTO_PRICE_REALTIME, STOCK_PRICE_REALTIME
+from jobs.sinks import telegram_alert_sink
 from jobs.utils import evaluate_rules, load_json_config, validate_rules
 
 TOPICS = [STOCK_PRICE_REALTIME, CRYPTO_PRICE_REALTIME]
@@ -67,13 +68,12 @@ def run() -> None:
                 if last is not None and (now - last) < COOLDOWN_MS:
                     continue
                 self._last_fired.put(rule_key, now)
-                alert = (
-                    f"[ALERT {ts}] {symbol:10s} | {hit['message']}"
-                    f" | price={price:.2f}  pct={pct:+.2f}%"
-                    f"  {hit['matched_field']}={hit['matched_value']}"
+                yield (
+                    f"🚨 *Price Alert*\n"
+                    f"*Symbol:* `{symbol}` | *Time:* `{ts}`\n"
+                    f"*Signal:* {hit['message']}\n"
+                    f"*Price:* `{price:.2f}` | *Change:* `{pct:+.2f}%`"
                 )
-                log.warning(alert)
-                yield alert
 
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(4)
@@ -105,7 +105,7 @@ def run() -> None:
         .filter(lambda m: m.get("event_type") == "price.snapshot")
         .key_by(lambda m: m["symbol"])
         .process(PriceAlertFunction())
-        .print()
+        .add_sink(telegram_alert_sink())
     )
 
     log.info("Starting PriceAlertJob | topics=%s | rules=%d", TOPICS, len(rules))

@@ -1,11 +1,8 @@
-import io
 import json
 import logging
 import math
 import os
 import time
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -16,6 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger(__name__)
 
 from market_data_models.topics import CRYPTO_PRICE_REALTIME, STOCK_PRICE_REALTIME
+from jobs.sinks import telegram_alert_sink
 from jobs.utils import load_json_config
 
 TOPICS = [STOCK_PRICE_REALTIME, CRYPTO_PRICE_REALTIME]
@@ -32,6 +30,15 @@ def _std_dev(values: list[float]) -> float:
     return math.sqrt(sum((v - mean) ** 2 for v in values) / n)
 
 
+def _fmt_alert(v: dict) -> str:
+    return (
+        f"⚡ *Volatility Burst*\n"
+        f"*Symbol:* `{v['symbol']}`\n"
+        f"*Std Dev:* `{v['std_dev']:.4f}` | *Ticks:* `{v['price_count']}`\n"
+        f"*Mean Price:* `{v['mean_price']:.4f}`"
+    )
+
+
 def run() -> None:
     try:
         from pyflink.common import WatermarkStrategy
@@ -43,11 +50,7 @@ def run() -> None:
             KafkaOffsetsInitializer,
             KafkaSource,
         )
-        from pyflink.datastream.functions import (
-            KeyedProcessFunction,
-            ProcessWindowFunction,
-            RichSinkFunction,
-        )
+        from pyflink.datastream.functions import KeyedProcessFunction, ProcessWindowFunction
         from pyflink.datastream.state import MapStateDescriptor
         from pyflink.datastream.window import SlidingProcessingTimeWindows
     except ImportError:
@@ -62,9 +65,6 @@ def run() -> None:
     std_dev_threshold: float = cfg.get("std_dev_threshold", 0.5)
     min_ticks: int = cfg.get("min_ticks", 5)
     cooldown_ms: int = cfg.get("cooldown_ms", 300_000)
-    minio_prefix: str = cfg.get("minio_prefix", "volatility.burst")
-    flush_interval_s: int = cfg.get("flush_interval_s", 60)
-    flush_batch_size: int = cfg.get("flush_batch_size", 50)
 
     class VolatilityWindowFunction(ProcessWindowFunction):
         """Computes price std dev over the sliding window; emits an alert dict when threshold is exceeded."""
@@ -101,62 +101,11 @@ def run() -> None:
             if last is not None and (now - last) < cooldown_ms:
                 return
             self._last_fired.put(symbol, now)
-            log.warning(
+            log.info(
                 "[VOLATILITY BURST] %-12s  std_dev=%.4f  ticks=%d  mean_price=%.4f",
                 symbol, value["std_dev"], value["price_count"], value["mean_price"],
             )
             yield value
-
-    class MinioVolatilitySink(RichSinkFunction):
-        """Buffers volatility alerts and flushes them as NDJSON files to the market-analysis bucket."""
-
-        def open(self, runtime_context):
-            from minio import Minio
-            raw_endpoint = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
-            secure = raw_endpoint.startswith("https://")
-            endpoint = raw_endpoint.replace("https://", "").replace("http://", "")
-            self._client = Minio(
-                endpoint,
-                access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-                secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
-                secure=secure,
-            )
-            self._bucket = os.getenv("MINIO_ANALYSIS_BUCKET", "market-analysis")
-            self._prefix = minio_prefix
-            self._buffer: list[dict] = []
-            self._last_flush = time.time()
-
-        def invoke(self, value, context):
-            self._buffer.append(value)
-            elapsed = time.time() - self._last_flush
-            if len(self._buffer) >= flush_batch_size or elapsed >= flush_interval_s:
-                self._flush()
-
-        def close(self):
-            self._flush()
-
-        def _flush(self):
-            if not self._buffer:
-                return
-            now = datetime.now(timezone.utc)
-            object_name = (
-                f"{self._prefix}/year={now.year}/month={now.month:02d}/"
-                f"day={now.day:02d}/hour={now.hour:02d}/{uuid.uuid4().hex}.json"
-            )
-            payload = "\n".join(json.dumps(r) for r in self._buffer).encode()
-            self._client.put_object(
-                self._bucket,
-                object_name,
-                io.BytesIO(payload),
-                length=len(payload),
-                content_type="application/x-ndjson",
-            )
-            log.info(
-                "Flushed %d volatility alerts → %s/%s",
-                len(self._buffer), self._bucket, object_name,
-            )
-            self._buffer = []
-            self._last_flush = time.time()
 
     env = StreamExecutionEnvironment.get_execution_environment()
     env.set_parallelism(4)
@@ -192,7 +141,8 @@ def run() -> None:
         .process(VolatilityWindowFunction())
         .key_by(lambda v: v["symbol"])
         .process(CooldownFunction())
-        .add_sink(MinioVolatilitySink())
+        .map(_fmt_alert)
+        .add_sink(telegram_alert_sink())
     )
 
     log.info(
