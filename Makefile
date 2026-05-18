@@ -1,5 +1,5 @@
 .PHONY: install \
-        run-ohlcv-daily-ingest run-spark-technical run-flink-alert \
+        run-ohlcv-daily-ingest run-spark-technical run-flink-alert run-volatility-burst \
         run-digest run-screener \
         test test-unit
 
@@ -25,6 +25,11 @@ run-flink-alert: ## Submit Flink price alert job to the Docker cluster
 	docker exec flink-jobmanager flink run \
 	  --python /opt/project/main.py \
 	  -- flink-alert
+
+run-volatility-burst: ## Submit Flink volatility burst detection job to the Docker cluster
+	docker exec flink-jobmanager flink run \
+	  --python /opt/project/main.py \
+	  -- volatility-burst
 
 test: ## Run all tests
 	PYTHONPATH=. $(PYTHON) -m pytest

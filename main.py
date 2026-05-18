@@ -9,6 +9,7 @@ def main():
     ohlcv_p.add_argument("--date", metavar="YYYY-MM-DD", help="Target date (default: today)")
     sub.add_parser("technical", help="Compute SMA/RSI/MACD/Bollinger Bands from OHLCV bars")
     sub.add_parser("flink-alert", help="Flink DataStream job: real-time price alerts")
+    sub.add_parser("volatility-burst", help="Flink DataStream job: sliding-window volatility burst detection")
     digest_p = sub.add_parser("digest", help="Daily digest of top gainers, losers, and volume leaders")
     digest_p.add_argument("--date", metavar="YYYY-MM-DD", help="Target date (default: today)")
     screener_p = sub.add_parser("screener", help="Weekly fundamental screener: P/E, ROE, EPS, D/E filter")
@@ -26,6 +27,10 @@ def main():
 
     elif args.command == "flink-alert":
         from jobs.stream.price_alert_job import run
+        run()
+
+    elif args.command == "volatility-burst":
+        from jobs.stream.volatility_burst_job import run
         run()
 
     elif args.command == "digest":
