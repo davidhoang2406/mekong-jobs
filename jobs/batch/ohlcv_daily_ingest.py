@@ -89,3 +89,7 @@ def run(target_date: str | None = None) -> None:
          .parquet(dst))
 
         log.info("Done | bars written for %s → %s", target.isoformat(), dst)
+
+    # Write _SUCCESS marker only after Spark context is closed (outside `with` block).
+    raw_store.put_marker(f"_SUCCESS/year={year}/month={month}/day={day}")
+    log.info("_SUCCESS marker written for %s", target.isoformat())
