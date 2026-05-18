@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -44,21 +44,19 @@ def run(target_date: str | None = None) -> None:
         log.warning("No price snapshots found for %s — nothing to ingest", target.isoformat())
         return
 
-    target_start = datetime(target.year, target.month, target.day, tzinfo=timezone.utc)
-    target_end   = target_start + timedelta(days=1)
     dst = f"s3a://{ANALYSIS_BUCKET}/ohlcv.bar"
 
     with SparkFactory("ohlcv_daily_ingest") as spark:
         spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
+        # Hive partition discovery provides asset_class, year, month, day as columns;
+        # filter on them directly so Spark prunes non-matching partitions at read time.
         df = (spark.read.format("avro")
-              .option("recursiveFileLookup", "true")
               .load(f"s3a://{RAW_BUCKET}/price.snapshot")
-              .filter((F.col("time") >= F.lit(target_start)) &
-                      (F.col("time") <  F.lit(target_end))))
+              .filter((F.col("year") == year) & (F.col("month") == month) & (F.col("day") == day)))
 
         df_ohlcv = (
-            df.groupBy("symbol", "exchange")
+            df.groupBy("symbol", "exchange", "asset_class")
             .agg(
                 F.min(F.struct("time", "price")).getField("price").alias("open"),
                 F.max("price").alias("high"),
@@ -68,8 +66,6 @@ def run(target_date: str | None = None) -> None:
                 F.min("time").alias("_min_time"),
             )
             .withColumn("time", F.date_trunc("day", F.col("_min_time")))
-            .withColumn("asset_class",
-                F.when(F.col("symbol").contains("/"), F.lit("crypto")).otherwise(F.lit("stock")))
             .withColumn("year",  F.lit(year))
             .withColumn("month", F.lit(month))
             .withColumn("day",   F.lit(day))

@@ -3,6 +3,8 @@ import logging
 import os
 from pathlib import Path
 
+COOLDOWN_MS = int(os.getenv("ALERT_COOLDOWN_MS", str(5 * 60 * 1000)))  # 5 min default
+
 from dotenv import load_dotenv
 
 _ROOT = Path(__file__).parent.parent.parent
@@ -24,12 +26,14 @@ def run() -> None:
     try:
         from pyflink.common import WatermarkStrategy
         from pyflink.common.serialization import SimpleStringSchema
+        from pyflink.common.typeinfo import Types
         from pyflink.datastream import StreamExecutionEnvironment
         from pyflink.datastream.connectors.kafka import (
             KafkaOffsetsInitializer,
             KafkaSource,
         )
         from pyflink.datastream.functions import KeyedProcessFunction
+        from pyflink.datastream.state import MapStateDescriptor
     except ImportError:
         raise SystemExit(
             "apache-flink is not installed.\n"
@@ -39,10 +43,12 @@ def run() -> None:
     rules = validate_rules(load_json_config(ALERTS_CONFIG))
 
     class PriceAlertFunction(KeyedProcessFunction):
-        """
-        Stateless per-element check against threshold rules.
-        Keyed by symbol — prerequisite for adding ValueState/timers in future phases.
-        """
+        """Per-symbol alert evaluation with per-rule cooldown via MapState."""
+
+        def open(self, ctx):
+            self._last_fired = self.runtime_context.get_map_state(
+                MapStateDescriptor("last_fired", Types.STRING(), Types.LONG())
+            )
 
         def process_element(self, msg: dict, ctx: "KeyedProcessFunction.Context"):
             symbol  = msg.get("symbol", "")
@@ -51,10 +57,16 @@ def run() -> None:
             price   = payload.get("price", 0.0)
             pct     = payload.get("pct_change", 0.0)
             ts      = msg.get("timestamp", "")[:19]
+            now     = ctx.timer_service().current_processing_time()
 
             log.info("tick  %-12s  price=%.4f  pct=%+.2f%%  source=%s", symbol, price, pct, source)
 
             for hit in evaluate_rules(rules, symbol, payload, source):
+                rule_key = f"{hit['field']}:{hit['operator']}:{hit['threshold']}"
+                last = self._last_fired.get(rule_key)
+                if last is not None and (now - last) < COOLDOWN_MS:
+                    continue
+                self._last_fired.put(rule_key, now)
                 alert = (
                     f"[ALERT {ts}] {symbol:10s} | {hit['message']}"
                     f" | price={price:.2f}  pct={pct:+.2f}%"
