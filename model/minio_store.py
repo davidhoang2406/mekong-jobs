@@ -44,6 +44,11 @@ class MinioStore:
             response.close()
             response.release_conn()
 
+    def put_marker(self, key: str) -> None:
+        """Write a zero-byte object at *key* — used for _SUCCESS partition markers."""
+        self._client.put_object(self.bucket, key, io.BytesIO(b""), 0)
+        log.info("marker written → s3://%s/%s", self.bucket, key)
+
     def write_parquet(self, key: str, schema: pa.Schema, rows: list[dict]) -> None:
         if not rows:
             return
