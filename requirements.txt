@@ -7,3 +7,4 @@ pyarrow>=16.0
 pandas==3.0.3
 docker>=7.0
 pytest>=7.4
+vnstock>=3.0
