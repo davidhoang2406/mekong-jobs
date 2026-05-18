@@ -8,3 +8,5 @@ build/
 .coverage
 .DS_Store
 /tmp/spark-events/
+.env
+.env.*
