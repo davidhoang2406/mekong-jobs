@@ -3,7 +3,7 @@ import os
 from datetime import date
 
 from dotenv import load_dotenv
-from pyspark.sql import DataFrame, functions as F
+from pyspark.sql import DataFrame, SparkSession, functions as F
 from pyspark.sql.types import DoubleType, StringType, StructField, StructType, TimestampType
 from pyspark.sql.window import Window
 
@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 ANALYSIS_BUCKET = os.getenv("MINIO_ANALYSIS_BUCKET", "market-analysis")
 
 _MIN = {"sma20": 20, "sma50": 50, "sma200": 200, "rsi": 14, "bb": 20, "macd": 26}
+_LOOKBACK = 200  # rows per symbol to keep in the checkpoint
 
 _MACD_SCHEMA = StructType([
     StructField("symbol",      StringType()),
@@ -96,20 +97,69 @@ def _add_indicators(df: DataFrame) -> DataFrame:
     return df.drop("_n")
 
 
-def run() -> None:
-    src   = f"s3a://{ANALYSIS_BUCKET}/ohlcv.bar"
-    dst   = f"s3a://{ANALYSIS_BUCKET}/technical.indicators"
+def _read_checkpoint(spark: SparkSession, path: str) -> DataFrame | None:
+    try:
+        df = spark.read.parquet(path)
+        count = df.count()
+        if count > 0:
+            log.info("Loaded checkpoint: %d rows from %s", count, path)
+            return df
+    except Exception:
+        pass
+    log.info("No checkpoint found at %s — will do a full scan", path)
+    return None
+
+
+def _write_checkpoint(df: DataFrame, path: str) -> None:
+    """Keep only the last _LOOKBACK rows per symbol, ordered by time."""
+    w = Window.partitionBy("symbol").orderBy(F.col("time").desc())
+    trimmed = (
+        df.withColumn("_rn", F.row_number().over(w))
+          .filter(F.col("_rn") <= _LOOKBACK)
+          .drop("_rn")
+    )
+    trimmed.write.mode("overwrite").parquet(path)
+    log.info("Checkpoint written: %d rows → %s", trimmed.count(), path)
+
+
+def run(full_recompute: bool = False) -> None:
+    ohlcv_path      = f"s3a://{ANALYSIS_BUCKET}/ohlcv.bar"
+    dst             = f"s3a://{ANALYSIS_BUCKET}/technical.indicators"
+    checkpoint_path = f"s3a://{ANALYSIS_BUCKET}/technical.checkpoint"
     today = date.today()
     year  = today.strftime("%Y")
     month = today.strftime("%m")
     day   = today.strftime("%d")
 
-    log.info("TechnicalJob | src=%s | computing indicators...", src)
-
     with SparkFactory("TechnicalJob") as spark:
         spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
-        df = spark.read.parquet(src)
+        checkpoint = None if full_recompute else _read_checkpoint(spark, checkpoint_path)
+
+        if checkpoint is not None:
+            # Incremental: find the latest timestamp in the checkpoint,
+            # load only OHLCV bars strictly after that, then combine.
+            max_time = checkpoint.agg(F.max("time")).collect()[0][0]
+            log.info("Incremental mode | checkpoint max time: %s", max_time)
+
+            new_bars = (
+                spark.read.parquet(ohlcv_path)
+                     .filter(F.col("time") > F.lit(max_time))
+            )
+            new_count = new_bars.count()
+
+            if new_count == 0:
+                log.info("No new OHLCV bars since checkpoint — recomputing from checkpoint only")
+
+            log.info("New bars since checkpoint: %d", new_count)
+
+            # Union checkpoint history with new bars (checkpoint columns match OHLCV columns)
+            ohlcv_cols = ["time", "symbol", "exchange", "open", "high", "low", "close", "volume"]
+            df = checkpoint.select(ohlcv_cols).unionByName(new_bars.select(ohlcv_cols))
+        else:
+            log.info("Full scan mode | reading all OHLCV bars from %s", ohlcv_path)
+            df = spark.read.parquet(ohlcv_path)
+
         df = _add_indicators(df)
 
         latest = Window.partitionBy("symbol").orderBy(F.col("time").desc())
@@ -124,5 +174,10 @@ def run() -> None:
         )
 
         df_out.write.mode("overwrite").partitionBy("year", "month", "day").parquet(dst)
+        log.info("Indicators written | date=%s → %s", today.isoformat(), dst)
 
-    log.info("TechnicalJob done | date=%s → %s", today.isoformat(), dst)
+        # Update checkpoint with the last _LOOKBACK bars per symbol from the
+        # full working set (checkpoint + new bars), so the next run can be incremental.
+        _write_checkpoint(df, checkpoint_path)
+
+    log.info("TechnicalJob done | date=%s", today.isoformat())
