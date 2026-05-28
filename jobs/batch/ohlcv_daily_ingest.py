@@ -49,11 +49,19 @@ def run(target_date: str | None = None) -> None:
     with SparkFactory("ohlcv_daily_ingest") as spark:
         spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
-        # Hive partition discovery provides asset_class, year, month, day as columns;
-        # filter on them directly so Spark prunes non-matching partitions at read time.
-        df = (spark.read.format("avro")
-              .load(f"s3a://{RAW_BUCKET}/price.snapshot")
-              .filter((F.col("year") == year) & (F.col("month") == month) & (F.col("day") == day)))
+        # Load only the target day's partitions. basePath tells Spark where Hive partition
+        # inference starts (asset_class, symbol, year, month, day). The Avro payload also
+        # contains `symbol`, so Spark 4.x emits a COLUMN_ALREADY_EXISTS warning and keeps
+        # the data-column version, which is correct for the groupBy below.
+        day_glob = (
+            f"s3a://{RAW_BUCKET}/price.snapshot/asset_class=*"
+            f"/symbol=*/year={year}/month={month}/day={day}"
+        )
+        df = (
+            spark.read.format("avro")
+            .option("basePath", f"s3a://{RAW_BUCKET}/price.snapshot")
+            .load(day_glob)
+        )
 
         df_ohlcv = (
             df.groupBy("symbol", "exchange", "asset_class")
