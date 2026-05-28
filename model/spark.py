@@ -44,7 +44,7 @@ class SparkFactory:
                  .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
                  .config("spark.sql.shuffle.partitions",                  "8")
                  .config("spark.eventLog.enabled", "true")
-                 .config("spark.eventLog.dir",     "/tmp/spark-events")
+                 .config("spark.eventLog.dir",     f"s3a://{os.getenv('MINIO_BUCKET', 'market-data')}/spark-events")
                  .getOrCreate())
         spark.sparkContext.setLogLevel("WARN")
         return spark
