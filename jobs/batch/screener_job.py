@@ -4,6 +4,7 @@ import os
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 from dotenv import load_dotenv
 from pyspark.sql import functions as F
 
@@ -25,23 +26,30 @@ _FIELD_MAP = {
     "currentRatio":   "current_ratio",
 }
 
-_OPS = {"<=": "__le__", ">=": "__ge__", "<": "__lt__", ">": "__gt__", "==": "__eq__"}
-
 
 def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
     from vnstock import Finance
     records = []
     for symbol in symbols:
         try:
-            df = Finance(symbol=symbol, period="yearly", source=source).ratio(dropna=True)
+            df = Finance(symbol=symbol, period="yearly", source=source).ratio()
             if df is None or df.empty:
                 log.warning("No fundamental data for %s", symbol)
                 continue
+
+            # Drop rows where all mapped fields are NaN, then take most recent.
+            mapped_cols = [c for c in _FIELD_MAP if c in df.columns]
+            df = df.dropna(subset=mapped_cols, how="all")
+            if df.empty:
+                log.warning("All rows NaN for %s after dropna", symbol)
+                continue
+
             row = df.iloc[-1].to_dict()
             record = {"symbol": symbol}
             for src_col, dst_col in _FIELD_MAP.items():
                 if src_col in row:
-                    record[dst_col] = float(row[src_col]) if row[src_col] is not None else None
+                    val = row[src_col]
+                    record[dst_col] = float(val) if pd.notna(val) else None
             records.append(record)
         except Exception as exc:
             log.warning("Failed to fetch fundamentals for %s: %s", symbol, exc)
@@ -78,14 +86,15 @@ def run(target_date: str | None = None) -> None:
             if field not in df.columns:
                 log.warning("Threshold field '%s' not in data — skipping", field)
                 continue
-            op, val = rule.get("op", "<="), rule.get("value")
+            op  = rule.get("op", "<=")
+            val = rule.get("value")
             if val is None:
                 continue
             col = F.col(field).cast("double")
             if   op == "<=": df = df.filter(col <= val)
             elif op == ">=": df = df.filter(col >= val)
-            elif op == "<":  df = df.filter(col < val)
-            elif op == ">":  df = df.filter(col > val)
+            elif op == "<":  df = df.filter(col <  val)
+            elif op == ">":  df = df.filter(col >  val)
             elif op == "==": df = df.filter(col == val)
 
         count = df.count()
