@@ -109,14 +109,11 @@ def run(target_date: str | None = None) -> None:
         return
 
     log.info("Fetched fundamentals for %d/%d symbols", len(records), len(symbols))
-    for r in records:
-        log.info("Record: %s", r)
 
     with SparkFactory("ScreenerJob") as spark:
         spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 
         df = spark.createDataFrame(records)
-        log.info("DataFrame before filtering: %d rows, columns: %s", df.count(), df.columns)
 
         for field, rule in thresholds.items():
             if field not in df.columns:
@@ -127,14 +124,11 @@ def run(target_date: str | None = None) -> None:
             if val is None:
                 continue
             col = F.col(field).cast("double")
-            before = df.count()
             if   op == "<=": df = df.filter(col <= val)
             elif op == ">=": df = df.filter(col >= val)
             elif op == "<":  df = df.filter(col <  val)
             elif op == ">":  df = df.filter(col >  val)
             elif op == "==": df = df.filter(col == val)
-            after = df.count()
-            log.info("Filter %s %s %s: %d → %d rows", field, op, val, before, after)
 
         count = df.count()
         log.info("Screener matched %d symbols after applying %d threshold(s)",
