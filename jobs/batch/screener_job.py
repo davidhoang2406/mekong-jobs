@@ -32,7 +32,7 @@ def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
     records = []
     for symbol in symbols:
         try:
-            df = Finance(symbol=symbol, period="yearly", source=source).ratio()
+            df = Finance(symbol=symbol, period="year", source=source).ratio()
             if df is None or df.empty:
                 log.warning("No fundamental data for %s", symbol)
                 continue
