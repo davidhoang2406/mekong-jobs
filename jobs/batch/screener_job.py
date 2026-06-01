@@ -17,14 +17,37 @@ log = logging.getLogger(__name__)
 ANALYSIS_BUCKET = os.getenv("MINIO_ANALYSIS_BUCKET", "market-analysis")
 CONFIG = Path(__file__).parent.parent.parent / "config" / "screener.json"
 
+# Maps item_en row labels (from pivoted Finance.ratio() DataFrame) to destination columns.
+# ROE is stored as a percentage value (e.g. 22.5 = 22.5%) — thresholds must match.
 _FIELD_MAP = {
-    "priceToEarning": "pe_ratio",
-    "priceToBook":    "pb_ratio",
-    "roe":            "roe",
-    "eps":            "eps",
-    "debtOnEquity":   "de_ratio",
-    "currentRatio":   "current_ratio",
+    "P/E":           "pe_ratio",
+    "P/B":           "pb_ratio",
+    "ROE (%)":       "roe",
+    "Debt/Equity":   "de_ratio",
+    "Current Ratio": "current_ratio",
 }
+
+
+def _latest_year_col_idx(df: pd.DataFrame) -> int:
+    """Return the positional index of the most recent year column.
+
+    Finance.ratio() returns a pivoted DataFrame:
+      col 0: item   col 1: item_en   col 2: item_id   col 3..: year values
+    Year column names may be duplicate Period strings — use positional access.
+    The 'Ratio Year Id' row contains the actual year numbers for each column.
+    """
+    year_id_row = df[df.iloc[:, 1] == "Ratio Year Id"]
+    if not year_id_row.empty:
+        year_vals = year_id_row.iloc[0, 3:].values
+        try:
+            max_offset = max(
+                range(len(year_vals)),
+                key=lambda i: int(float(str(year_vals[i]))) if pd.notna(year_vals[i]) else 0,
+            )
+            return 3 + max_offset
+        except Exception:
+            pass
+    return len(df.columns) - 1
 
 
 def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
@@ -37,28 +60,26 @@ def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
                 log.warning("No fundamental data for %s", symbol)
                 continue
 
-            # Log structure to identify item_en values and year columns.
-            log.info("Finance.ratio() columns for %s: %s", symbol, df.columns.tolist())
-            if "item_en" in df.columns:
-                log.info("Finance.ratio() item_en values for %s: %s", symbol, df["item_en"].tolist())
-
-            # Drop rows where all mapped fields are NaN, then take most recent.
-            mapped_cols = [c for c in _FIELD_MAP if c in df.columns]
-            if not mapped_cols:
-                log.warning("No _FIELD_MAP keys found in df.columns for %s — column mismatch", symbol)
-                continue
-            df = df.dropna(subset=mapped_cols, how="all")
-            if df.empty:
-                log.warning("All rows NaN for %s after dropna", symbol)
+            if len(df.columns) <= 3:
+                log.warning("Unexpected DataFrame shape for %s: %s", symbol, df.shape)
                 continue
 
-            row = df.iloc[-1].to_dict()
+            latest_idx = _latest_year_col_idx(df)
+
+            # Build lookup: item_en label → latest year value (positional to avoid dup col names)
+            lookup: dict[str, float | None] = {}
+            for _, row in df.iterrows():
+                key = row.iloc[1]  # item_en column
+                if pd.notna(key) and key and key != 0:
+                    val = row.iloc[latest_idx]
+                    lookup[str(key)] = float(val) if pd.notna(val) else None
+
             record = {"symbol": symbol}
-            for src_col, dst_col in _FIELD_MAP.items():
-                if src_col in row:
-                    val = row[src_col]
-                    record[dst_col] = float(val) if pd.notna(val) else None
+            for src_key, dst_col in _FIELD_MAP.items():
+                record[dst_col] = lookup.get(src_key)
+
             records.append(record)
+            log.info("Fetched %s: %s", symbol, {k: v for k, v in record.items() if k != "symbol"})
         except Exception as exc:
             log.warning("Failed to fetch fundamentals for %s: %s", symbol, exc)
     return records
