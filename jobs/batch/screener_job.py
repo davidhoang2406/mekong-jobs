@@ -37,8 +37,14 @@ def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
                 log.warning("No fundamental data for %s", symbol)
                 continue
 
+            # Log actual columns to diagnose mapping mismatches.
+            log.info("Finance.ratio() columns for %s: %s", symbol, df.columns.tolist())
+
             # Drop rows where all mapped fields are NaN, then take most recent.
             mapped_cols = [c for c in _FIELD_MAP if c in df.columns]
+            if not mapped_cols:
+                log.warning("No _FIELD_MAP keys found in df.columns for %s — column mismatch", symbol)
+                continue
             df = df.dropna(subset=mapped_cols, how="all")
             if df.empty:
                 log.warning("All rows NaN for %s after dropna", symbol)
