@@ -39,14 +39,17 @@ def _latest_year_col_idx(df: pd.DataFrame) -> int:
     year_id_row = df[df.iloc[:, 1] == "Ratio Year Id"]
     if not year_id_row.empty:
         year_vals = year_id_row.iloc[0, 3:].values
-        try:
-            max_offset = max(
-                range(len(year_vals)),
-                key=lambda i: int(float(str(year_vals[i]))) if pd.notna(year_vals[i]) else 0,
-            )
+
+        def _to_year(val) -> int:
+            try:
+                return int(float(str(val))) if pd.notna(val) else 0
+            except (ValueError, TypeError):
+                return 0
+
+        year_ints = [_to_year(v) for v in year_vals]
+        if any(y > 0 for y in year_ints):
+            max_offset = max(range(len(year_ints)), key=lambda i: year_ints[i])
             return 3 + max_offset
-        except Exception:
-            pass
     return len(df.columns) - 1
 
 
