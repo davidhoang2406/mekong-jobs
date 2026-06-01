@@ -37,8 +37,10 @@ def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
                 log.warning("No fundamental data for %s", symbol)
                 continue
 
-            # Log actual columns to diagnose mapping mismatches.
+            # Log structure to identify item_en values and year columns.
             log.info("Finance.ratio() columns for %s: %s", symbol, df.columns.tolist())
+            if "item_en" in df.columns:
+                log.info("Finance.ratio() item_en values for %s: %s", symbol, df["item_en"].tolist())
 
             # Drop rows where all mapped fields are NaN, then take most recent.
             mapped_cols = [c for c in _FIELD_MAP if c in df.columns]
