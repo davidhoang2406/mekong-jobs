@@ -149,6 +149,24 @@ class TestFetchFundamentals:
         from jobs.batch.screener_job import _fetch_fundamentals
         assert _fetch_fundamentals(["VCB"], "VCI") == []
 
+    def test_string_values_in_year_col_do_not_crash(self, monkeypatch):
+        """Rows like 'Ratio TTM Id' / 'Ratio Type' have non-numeric year column values."""
+        from jobs.batch.screener_job import _fetch_fundamentals
+        df = _make_df(
+            item_en_rows=["Ratio TTM Id", "Ratio Type", "P/E", "Ratio Year Id"],
+            year_cols=[2025],
+            data={
+                "Ratio TTM Id":  ["RATIO_TTM"],
+                "Ratio Type":    ["RATIO_YEAR"],
+                "P/E":           [14.2],
+                "Ratio Year Id": [2025],
+            },
+        )
+        self._patch(monkeypatch, df)
+        records = _fetch_fundamentals(["VCB"], "VCI")
+        assert len(records) == 1
+        assert records[0]["pe_ratio"] == pytest.approx(14.2)
+
     def test_multiple_symbols(self, monkeypatch):
         from jobs.batch.screener_job import _fetch_fundamentals
         df = _typical_df([2025])

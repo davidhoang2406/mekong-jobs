@@ -75,7 +75,8 @@ def _fetch_fundamentals(symbols: list[str], source: str) -> list[dict]:
                 key = row.iloc[1]  # item_en column
                 if pd.notna(key) and key and key != 0:
                     val = row.iloc[latest_idx]
-                    lookup[str(key)] = float(val) if pd.notna(val) else None
+                    numeric = pd.to_numeric(val, errors="coerce")
+                    lookup[str(key)] = float(numeric) if pd.notna(numeric) else None
 
             record = {"symbol": symbol}
             for src_key, dst_col in _FIELD_MAP.items():
