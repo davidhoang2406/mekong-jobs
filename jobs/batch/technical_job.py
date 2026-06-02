@@ -122,14 +122,14 @@ def _write_checkpoint(df: DataFrame, path: str) -> None:
     log.info("Checkpoint written: %d rows → %s", trimmed.count(), path)
 
 
-def run(full_recompute: bool = False) -> None:
+def run(full_recompute: bool = False, target_date: str | None = None) -> None:
     ohlcv_path      = f"s3a://{ANALYSIS_BUCKET}/ohlcv.bar"
     dst             = f"s3a://{ANALYSIS_BUCKET}/technical.indicators"
     checkpoint_path = f"s3a://{ANALYSIS_BUCKET}/technical.checkpoint"
-    today = date.today()
-    year  = today.strftime("%Y")
-    month = today.strftime("%m")
-    day   = today.strftime("%d")
+    target = date.fromisoformat(target_date) if target_date else date.today()
+    year  = target.strftime("%Y")
+    month = target.strftime("%m")
+    day   = target.strftime("%d")
 
     with SparkFactory("TechnicalJob") as spark:
         spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
@@ -174,10 +174,10 @@ def run(full_recompute: bool = False) -> None:
         )
 
         df_out.write.mode("overwrite").partitionBy("year", "month", "day").parquet(dst)
-        log.info("Indicators written | date=%s → %s", today.isoformat(), dst)
+        log.info("Indicators written | date=%s → %s", target.isoformat(), dst)
 
         # Update checkpoint with the last _LOOKBACK bars per symbol from the
         # full working set (checkpoint + new bars), so the next run can be incremental.
         _write_checkpoint(df, checkpoint_path)
 
-    log.info("TechnicalJob done | date=%s", today.isoformat())
+    log.info("TechnicalJob done | date=%s", target.isoformat())
