@@ -8,6 +8,7 @@ def main():
     ohlcv_p = sub.add_parser("ohlcv-daily-ingest", help="Derive daily OHLCV bars from price snapshots in MinIO")
     ohlcv_p.add_argument("--date", metavar="YYYY-MM-DD", help="Target date (default: today)")
     tech_p = sub.add_parser("technical", help="Compute SMA/RSI/MACD/Bollinger Bands from OHLCV bars")
+    tech_p.add_argument("--date", metavar="YYYY-MM-DD", help="Output partition date (default: today)")
     tech_p.add_argument("--full-recompute", action="store_true",
                         help="Ignore checkpoint and read all OHLCV history (slower but repairs state)")
     sub.add_parser("flink-alert", help="Flink DataStream job: real-time price alerts")
@@ -25,7 +26,7 @@ def main():
 
     elif args.command == "technical":
         from jobs.batch.technical_job import run
-        run(full_recompute=args.full_recompute)
+        run(full_recompute=args.full_recompute, target_date=args.date)
 
     elif args.command == "flink-alert":
         from jobs.stream.price_alert_job import run

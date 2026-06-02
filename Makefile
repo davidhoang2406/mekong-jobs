@@ -17,8 +17,8 @@ install: ## Create venv and install job dependencies (needed for tests only)
 run-ohlcv-daily-ingest: ## Spark: derive OHLCV bars (optional: DATE=YYYY-MM-DD)
 	$(SPARK_EXEC) ohlcv-daily-ingest $(if $(DATE),--date $(DATE),)
 
-run-spark-technical: ## Spark: compute SMA/RSI/MACD/Bollinger Bands
-	$(SPARK_EXEC) technical
+run-spark-technical: ## Spark: compute SMA/RSI/MACD/Bollinger Bands (optional: DATE=YYYY-MM-DD)
+	$(SPARK_EXEC) technical $(if $(DATE),--date $(DATE),)
 
 run-digest: ## Spark: compute daily market digest (optional: DATE=YYYY-MM-DD)
 	$(SPARK_EXEC) digest $(if $(DATE),--date $(DATE),)

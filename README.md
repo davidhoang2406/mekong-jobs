@@ -47,7 +47,7 @@ python main.py <command> [options]
 | Command | Type | Notes |
 |---|---|---|
 | `ohlcv-daily-ingest` | Spark | `--date YYYY-MM-DD` (default today) |
-| `technical` | Spark | `--full-recompute` to ignore checkpoint |
+| `technical` | Spark | `--date YYYY-MM-DD` (output partition, default today); `--full-recompute` to ignore checkpoint |
 | `digest` | Spark | `--date YYYY-MM-DD` |
 | `screener` | Spark | `--date YYYY-MM-DD` (any day in the target ISO week) |
 | `flink-alert` | Flink | submit via `flink run --python main.py -- flink-alert` |
