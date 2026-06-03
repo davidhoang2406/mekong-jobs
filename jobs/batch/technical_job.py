@@ -117,9 +117,18 @@ def _write_checkpoint(df: DataFrame, path: str) -> None:
         df.withColumn("_rn", F.row_number().over(w))
           .filter(F.col("_rn") <= _LOOKBACK)
           .drop("_rn")
-    )
-    trimmed.write.mode("overwrite").parquet(path)
-    log.info("Checkpoint written: %d rows → %s", trimmed.count(), path)
+    ).cache()
+
+    # trimmed derives from the same checkpoint path we're about to overwrite.
+    # Force full materialisation into memory first; otherwise the overwrite
+    # deletes the source parquet files while the write (and the count() below)
+    # are still lazily reading them — Spark fails with FILE_NOT_EXIST.
+    n = trimmed.count()
+    try:
+        trimmed.write.mode("overwrite").parquet(path)
+        log.info("Checkpoint written: %d rows → %s", n, path)
+    finally:
+        trimmed.unpersist()
 
 
 def run(full_recompute: bool = False, target_date: str | None = None) -> None:
