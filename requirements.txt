@@ -1,4 +1,4 @@
-market-data-models @ git+https://github.com/davidhoang2406/mekong-data-models.git
+market-data-models @ git+https://github.com/davidhoang2406/mekong-data-models.git@ad7581c71d4989b6db2bd139c2df4604d634ed16
 pyspark==4.1.1
 python-dotenv==1.2.2
 minio>=7.2
