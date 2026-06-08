@@ -107,7 +107,6 @@ class TestFetchFundamentals:
 
     def test_extracts_roe(self, monkeypatch):
         from jobs.batch.screener_job import _fetch_fundamentals
-        # Use full 5-year df so latest year (2025) has value 19.5
         df = _typical_df([2021, 2022, 2023, 2024, 2025])
         self._patch(monkeypatch, df)
         records = _fetch_fundamentals(["VCB"], "VCI")
