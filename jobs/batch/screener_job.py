@@ -23,6 +23,7 @@ _FIELD_MAP = {
     "P/E":           "pe_ratio",
     "P/B":           "pb_ratio",
     "ROE (%)":       "roe",
+    "EPS (VND)":     "eps",
     "Debt/Equity":   "de_ratio",
     "Current Ratio": "current_ratio",
 }
