@@ -28,15 +28,14 @@ def _make_df(item_en_rows: list, year_cols: list, data: dict[str, list]) -> pd.D
 def _typical_df(years: list[int] = None) -> pd.DataFrame:
     years = years or [2021, 2022, 2023, 2024, 2025]
     return _make_df(
-        item_en_rows=["P/E", "P/B", "ROE (%)", "EPS (VND)", "Debt/Equity", "Current Ratio", "Ratio Year Id"],
+        item_en_rows=["P/E", "P/B", "ROE (%)", "Debt/Equity", "Current Ratio", "Ratio Year Id"],
         year_cols=years,
         data={
-            "P/E":           [12.0,  13.5,  15.0,  14.2,  10.5],
-            "P/B":           [1.5,   1.8,   2.0,   2.1,   1.9],
-            "ROE (%)":       [18.0,  20.0,  22.5,  21.0,  19.5],
-            "EPS (VND)":     [1200,  1500,  1800,  2100,  2400],
-            "Debt/Equity":   [0.8,   0.9,   1.0,   0.8,   0.7],
-            "Current Ratio": [1.2,   1.3,   1.4,   1.4,   1.5],
+            "P/E":           [12.0, 13.5, 15.0, 14.2, 10.5],
+            "P/B":           [1.5,  1.8,  2.0,  2.1,  1.9],
+            "ROE (%)":       [18.0, 20.0, 22.5, 21.0, 19.5],
+            "Debt/Equity":   [0.8,  0.9,  1.0,  0.8,  0.7],
+            "Current Ratio": [1.2,  1.3,  1.4,  1.4,  1.5],
             "Ratio Year Id": [str(y) for y in years],
         },
     )
@@ -112,13 +111,6 @@ class TestFetchFundamentals:
         self._patch(monkeypatch, df)
         records = _fetch_fundamentals(["VCB"], "VCI")
         assert records[0]["roe"] == pytest.approx(19.5)
-
-    def test_extracts_eps(self, monkeypatch):
-        from jobs.batch.screener_job import _fetch_fundamentals
-        df = _typical_df([2021, 2022, 2023, 2024, 2025])
-        self._patch(monkeypatch, df)
-        records = _fetch_fundamentals(["VCB"], "VCI")
-        assert records[0]["eps"] == pytest.approx(2400)  # 2025 value
 
     def test_nan_value_stored_as_none(self, monkeypatch):
         from jobs.batch.screener_job import _fetch_fundamentals

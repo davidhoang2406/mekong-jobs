@@ -4,7 +4,6 @@
   "thresholds": {
     "pe_ratio":     {"op": "<=", "value": 20},
     "roe":          {"op": ">=", "value": 0.12},
-    "eps":          {"op": ">=", "value": 1000},
     "de_ratio":     {"op": "<=", "value": 2.0}
   }
 }
